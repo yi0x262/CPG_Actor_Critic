@@ -4,17 +4,27 @@ from cpg import cpg
 
 class cpg_actor_critic(actor_critic):
     def __init__(self,inout,A,alpha=0.05,gamma=0.95,**cpg_args):
-        inout_ = (inout[0]+inout[1],inout[1])
-        super().__init__(inout_,alpha=alpha,gamma=gamma)
-        self.CPG = cpg(inout[1],A,**cpg_args)
+        i,o = inout
+        super().__init__((i+o,i),alpha=alpha,gamma=gamma)
+        self.CPG = cpg(o,A,**cpg_args)
 
-        self.lastOutput = np.zeros((1,inout[1]))
+        self.lastOutput = np.zeros(o)
     def __call__(self,state,reward,dt):
-        #print(state,self.lastOutput)
-        state_ = np.c_[state,self.lastOutput]
+        #print('cpg_ac',state,self.lastOutput)
+        state_ = np.r_[state,self.lastOutput]
         self.act,self._ = self.action(state_,reward,dt)
-        self.lastOutput = np.array([self.CPG(dt,self.act)])
+        #print('cpg_ac.act',self.act)
+        self.lastOutput = np.array(self.CPG(dt,self.act[0]))
         return self.lastOutput
+
+class sin_env(object):
+    frequence = 0.1
+    def state(self,timelist):
+        t = np.array(timelist)
+        return np.maximum(np.sin(self.frequence*t),0)+1
+    def reward(self,timelist,value):
+        t = np.array(timelist)
+        return 2-sum(np.power(value - np.sin(self.frequence*t),2))
 
 if __name__ == '__main__':
     import numpy as np
@@ -23,30 +33,29 @@ if __name__ == '__main__':
     A = a - a*np.tri(inout[1])
     A += A.T
     cpg_ac = cpg_actor_critic(inout,A,x0=[1,2,0,0],alpha=0.15)
-    state = np.ones((1,inout[0]))
     reward = 1
     dt = 0.01
-    tmax = 2000
+    tmax = 20
 
-    def state(timelist):
-        return np.maximum(np.array(np.sin(timelist))+1,0)
-    def reward(timelist,value):
-        return 2-sum(np.power(value - np.sin(timelist),2)[0])
     lastact = np.array([[0,0]])
+    se = sin_env()
 
     from save_plot import logger
     import os
 
-    for i in range(10):
+    for i in range(1):
         print(i)
         z = np.arange(i*tmax,(i+1)*tmax,dt)
         t = [z,z+3.14]
         lgr = logger(['act','output','state','reward','TDerr'])
 
         for t0,t1 in zip(t[0],t[1]):
-            tl = [[t0,t1]]
-            s = state(tl)
-            r = reward(tl,lastact)
+            print(t0)
+            tl = [t0,t1]
+            s = se.state((t0,t1))
+            #print('state',s,t0)
+            r = se.reward(tl,lastact[0])
+            #print('reward',r)
             lastact = cpg_ac(s,r,dt)
             lgr.append([cpg_ac.act[0],lastact[0],s[0],r,cpg_ac._[0]])
 
